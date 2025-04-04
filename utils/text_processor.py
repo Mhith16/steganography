@@ -70,7 +70,7 @@ def prepare_patient_data_for_encoding(text, max_length=200):
     return text
 
 
-def text_to_binary_data(text, data_depth, height, width):
+def text_to_binary_data(text, data_depth, height, width, device='cpu'):
     """
     Convert text to binary data suitable for encoding.
     
@@ -78,6 +78,7 @@ def text_to_binary_data(text, data_depth, height, width):
         text: Text to encode
         data_depth: Number of binary channels
         height, width: Dimensions of the data tensor
+        device: The device to create the tensor on
         
     Returns:
         Binary tensor [1, data_depth, height, width]
@@ -97,7 +98,7 @@ def text_to_binary_data(text, data_depth, height, width):
                     data[0, d, h, w] = float(binary[idx])
                     idx = (idx + 1) % len(binary)  # Loop if we run out of data
     
-    return torch.from_numpy(data)
+    return torch.from_numpy(data).to(device)
 
 
 def binary_data_to_text(binary_data, max_length=1000):

@@ -10,9 +10,10 @@ class SteganoEncoder(nn.Module):
     """
     Enhanced encoder network for hiding messages in images.
     """
-    def __init__(self, data_depth=1, hidden_blocks=4, hidden_channels=32):
+    def __init__(self, data_depth=1, hidden_blocks=4, hidden_channels=32, image_size=256):
         super(SteganoEncoder, self).__init__()
         self.data_depth = data_depth
+        self.image_size = image_size
         
         # Initial feature extraction
         self.initial = ConvBlock(3, hidden_channels, kernel_size=3, padding=1)
@@ -36,11 +37,12 @@ class SteganoEncoder(nn.Module):
         self.up1 = UpsampleBlock(hidden_channels*4, hidden_channels*2)
         self.up2 = UpsampleBlock(hidden_channels*2, hidden_channels)
         
-        # Final image generation
+        # Final image generation with less impact on the image
         self.final = nn.Sequential(
             ConvBlock(hidden_channels, hidden_channels, kernel_size=3, padding=1),
             nn.Conv2d(hidden_channels, 3, kernel_size=3, padding=1),
-            nn.Tanh()
+            nn.Tanh(),
+            nn.LayerNorm([3, image_size, image_size])  # Add layer normalization
         )
     
     def forward(self, image, data):
@@ -92,12 +94,12 @@ class ProgressiveSteganoEncoder(nn.Module):
     """
     Progressive encoder with multiple data depths.
     """
-    def __init__(self, data_depths=[1, 2, 4], hidden_blocks=4, hidden_channels=32):
+    def __init__(self, data_depths=[1, 2, 4], hidden_blocks=4, hidden_channels=32, image_size=256):
         super(ProgressiveSteganoEncoder, self).__init__()
         
         # Create an encoder for each data depth
         self.encoders = nn.ModuleList([
-            SteganoEncoder(depth, hidden_blocks, hidden_channels) 
+            SteganoEncoder(depth, hidden_blocks, hidden_channels, image_size) 
             for depth in data_depths
         ])
         

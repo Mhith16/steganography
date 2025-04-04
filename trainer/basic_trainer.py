@@ -28,6 +28,8 @@ class BasicTrainer:
         output_dir='saved_models',
         data_depth=1,
         image_size=256,
+        target_accuracy=0.98,
+        min_psnr=35.0
     ):
         self.encoder = encoder.to(device)
         self.decoder = decoder.to(device)
@@ -37,13 +39,15 @@ class BasicTrainer:
         self.output_dir = output_dir
         self.data_depth = data_depth
         self.image_size = image_size
+        self.target_accuracy = target_accuracy
+        self.min_psnr = min_psnr
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
         
         # Initialize losses and optimizers
         self.encoder_criterion = nn.MSELoss()
-        self.decoder_criterion = nn.BCEWithLogitsLoss()
+        self.decoder_criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0]).to(device))
         
         # Combined parameters
         self.params = list(encoder.parameters()) + list(decoder.parameters())
@@ -89,6 +93,12 @@ class BasicTrainer:
         print(f"Training on {len(self.train_dataset)} images")
         print(f"Validating on {len(self.val_dataset)} images")
         
+        best_bit_accuracy = 0.0
+        best_epoch = 0
+        early_stop = False
+        patience = 10  # Number of epochs to wait for improvement
+        no_improve_count = 0
+        
         for epoch in range(epochs):
             start_time = time.time()
             
@@ -115,15 +125,49 @@ class BasicTrainer:
             print(f"  Val: PSNR: {val_metrics['psnr']:.2f} dB, SSIM: {val_metrics['ssim']:.4f}")
             print(f"  Val: Bit Accuracy: {val_metrics['bit_accuracy']:.4f}")
             
-            # Save models
+            # Check for best model
+            current_bit_accuracy = val_metrics['bit_accuracy']
+            if current_bit_accuracy > best_bit_accuracy and val_metrics['psnr'] >= self.min_psnr:
+                best_bit_accuracy = current_bit_accuracy
+                best_epoch = epoch
+                print(f"  New best model! Bit Accuracy: {best_bit_accuracy:.4f}")
+                
+                # Save best model
+                torch.save(self.encoder.state_dict(), os.path.join(self.output_dir, 'encoder_best.pt'))
+                torch.save(self.decoder.state_dict(), os.path.join(self.output_dir, 'decoder_best.pt'))
+                
+                no_improve_count = 0
+            else:
+                no_improve_count += 1
+            
+            # Save models at interval
             if (epoch + 1) % save_interval == 0 or epoch == epochs - 1:
                 self._save_checkpoint(epoch)
+            
+            # Check for early stopping criteria
+            if val_metrics['bit_accuracy'] >= self.target_accuracy and val_metrics['psnr'] >= self.min_psnr:
+                print(f"\nEarly stopping: Target bit accuracy of {self.target_accuracy:.2f} reached!")
+                early_stop = True
+                break
+            
+            # Check for no improvement early stopping
+            if no_improve_count >= patience:
+                print(f"\nEarly stopping: No improvement for {patience} epochs")
+                early_stop = True
+                break
         
-        # Save final models
+        # Always save final models
         torch.save(self.encoder.state_dict(), os.path.join(self.output_dir, 'encoder_final.pt'))
         torch.save(self.decoder.state_dict(), os.path.join(self.output_dir, 'decoder_final.pt'))
         
-        print("Training completed. Models saved.")
+        if early_stop:
+            print(f"Training stopped early at epoch {epoch+1}.")
+        else:
+            print("Training completed through all epochs.")
+            
+        print(f"Best model from epoch {best_epoch+1} with bit accuracy {best_bit_accuracy:.4f}")
+        print(f"Models saved to {self.output_dir}")
+        
         return self.history
     
     def _train_epoch(self, train_loader):
@@ -153,7 +197,7 @@ class BasicTrainer:
             decoder_loss = self.decoder_criterion(decoded, payload)
             
             # Combined loss (you can adjust weights if needed)
-            loss = encoder_loss + decoder_loss
+            loss = encoder_loss + 5.0 * decoder_loss
             
             # Backward pass and optimize
             loss.backward()

@@ -2,7 +2,7 @@
 Utility functions for steganography.
 """
 from .metrics import calculate_psnr, calculate_ssim, calculate_bit_accuracy
-from .dataset import XrayDataset, PatientDataset, get_default_transforms
+from .dataset import XrayDataset, PatientDataset, get_default_transforms, create_train_val_split
 from .text_processor import (
     extract_patient_info, 
     prepare_patient_data_for_encoding,

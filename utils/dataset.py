@@ -52,13 +52,15 @@ class PatientDataset(Dataset):
         # Create a mapping of patient IDs to both image and data files
         self.pairs = []
         for img_path in self.image_files:
-            # Extract patient ID from filename (assuming format like "patient_001.jpg")
-            patient_id = os.path.splitext(os.path.basename(img_path))[0]
-            data_path = os.path.join(data_dir, f"{patient_id}.txt")
+            # Extract base name without extension
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
+            data_path = os.path.join(data_dir, f"{base_name}.txt")
             
             # Only include if both image and data exist
             if os.path.exists(data_path):
                 self.pairs.append((img_path, data_path))
+            else:
+                print(f"Warning: No matching text file for {img_path}")
     
     def __len__(self):
         return len(self.pairs)

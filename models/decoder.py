@@ -33,6 +33,7 @@ class SteganoDecoder(nn.Module):
             ConvBlock(hidden_channels*2, hidden_channels, kernel_size=3, padding=1),
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             ConvBlock(hidden_channels, hidden_channels//2, kernel_size=3, padding=1),
+            nn.Dropout(0.1),  # Add dropout for better generalization
         )
         
         # Final data extraction

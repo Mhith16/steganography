@@ -4,9 +4,9 @@ Enhanced steganography for X-ray images with patient data.
 """
 import os
 import sys
+import glob
 import argparse
 import torch
-import glob
 from torchvision import transforms
 from PIL import Image
 import numpy as np
@@ -57,13 +57,13 @@ def train_model(args):
     # Initialize models
     if args.progressive:
         data_depths = [1, 2, 4]
-        encoder = ProgressiveSteganoEncoder(data_depths, args.hidden_blocks, args.hidden_channels)
+        encoder = ProgressiveSteganoEncoder(data_depths, args.hidden_blocks, args.hidden_channels, args.img_size)
         decoder = ProgressiveSteganoDecoder(data_depths, args.hidden_blocks, args.hidden_channels)
         # Set initial level
         encoder.set_level(0)  # Start with data_depth=1
         decoder.set_level(0)
     else:
-        encoder = SteganoEncoder(args.data_depth, args.hidden_blocks, args.hidden_channels)
+        encoder = SteganoEncoder(args.data_depth, args.hidden_blocks, args.hidden_channels, args.img_size)
         decoder = SteganoDecoder(args.data_depth, args.hidden_blocks, args.hidden_channels)
     
     # Choose training method
@@ -123,13 +123,18 @@ def encode_message(args):
     
     # Load encoder model
     if args.progressive:
-        encoder = ProgressiveSteganoEncoder([1, 2, 4], args.hidden_blocks, args.hidden_channels)
+        encoder = ProgressiveSteganoEncoder([1, 2, 4], args.hidden_blocks, args.hidden_channels, args.img_size)
         encoder.load_state_dict(torch.load(os.path.join(args.model_dir, 'encoder_final.pt'), map_location='cpu'))
         encoder.set_level(args.level)
         data_depth = encoder.data_depths[args.level]
     else:
-        encoder = SteganoEncoder(args.data_depth, args.hidden_blocks, args.hidden_channels)
-        encoder.load_state_dict(torch.load(os.path.join(args.model_dir, 'encoder_final.pt'), map_location='cpu'))
+        encoder = SteganoEncoder(args.data_depth, args.hidden_blocks, args.hidden_channels, args.img_size)
+        # Try to load the best model first, fall back to final model
+        encoder_path = os.path.join(args.model_dir, 'encoder_best.pt')
+        if not os.path.exists(encoder_path):
+            encoder_path = os.path.join(args.model_dir, 'encoder_final.pt')
+        
+        encoder.load_state_dict(torch.load(encoder_path, map_location='cpu'))
         data_depth = args.data_depth
     
     encoder.to(device)
@@ -238,7 +243,12 @@ def decode_message(args):
         decoder.set_level(args.level)
     else:
         decoder = SteganoDecoder(args.data_depth, args.hidden_blocks, args.hidden_channels)
-        decoder.load_state_dict(torch.load(os.path.join(args.model_dir, 'decoder_final.pt'), map_location='cpu'))
+        # Try to load the best model first, fall back to final model
+        decoder_path = os.path.join(args.model_dir, 'decoder_best.pt')
+        if not os.path.exists(decoder_path):
+            decoder_path = os.path.join(args.model_dir, 'decoder_final.pt')
+        
+        decoder.load_state_dict(torch.load(decoder_path, map_location='cpu'))
     
     decoder.to(device)
     decoder.eval()
@@ -420,6 +430,10 @@ def main():
                         help='Use adversarial training')
     parser.add_argument('--critic_iterations', type=int, default=5,
                         help='Number of critic iterations per generator iteration')
+    parser.add_argument('--target_accuracy', type=float, default=0.98,
+                        help='Target bit accuracy for early stopping (default: 0.98)')
+    parser.add_argument('--min_psnr', type=float, default=35.0,
+                        help='Minimum acceptable PSNR (default: 35.0)')
     parser.add_argument('--cuda', action='store_true',
                         help='Use CUDA if available')
                         

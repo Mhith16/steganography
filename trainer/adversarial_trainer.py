@@ -29,6 +29,8 @@ class AdversarialTrainer:
         output_dir='saved_models',
         data_depth=1,
         image_size=256,
+        target_accuracy=0.98,
+        min_psnr=35.0,
     ):
         self.encoder = encoder.to(device)
         self.decoder = decoder.to(device)
@@ -39,6 +41,8 @@ class AdversarialTrainer:
         self.output_dir = output_dir
         self.data_depth = data_depth
         self.image_size = image_size
+        self.target_accuracy = target_accuracy
+        self.min_psnr = min_psnr
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -153,6 +157,22 @@ class AdversarialTrainer:
                   f"SSIM: {val_metrics['ssim']:.4f}")
             print(f"  Val: Bit Accuracy: {val_metrics['bit_accuracy']:.4f}")
             
+            # Check for best model
+            current_bit_accuracy = val_metrics['bit_accuracy']
+            if current_bit_accuracy > best_bit_accuracy and val_metrics['psnr'] >= self.min_psnr:
+                best_bit_accuracy = current_bit_accuracy
+                best_epoch = epoch
+                print(f"  New best model! Bit Accuracy: {best_bit_accuracy:.4f}")
+                
+                # Save best model
+                torch.save(self.encoder.state_dict(), os.path.join(self.output_dir, 'encoder_best.pt'))
+                torch.save(self.decoder.state_dict(), os.path.join(self.output_dir, 'decoder_best.pt'))
+                torch.save(self.critic.state_dict(), os.path.join(self.output_dir, 'critic_best.pt'))
+                
+                no_improve_count = 0
+            else:
+                no_improve_count += 1
+            
             # Save models
             if (epoch + 1) % save_interval == 0 or epoch == epochs - 1:
                 self._save_checkpoint(epoch)
@@ -160,13 +180,32 @@ class AdversarialTrainer:
             # Update learning rate schedulers
             self.encoder_decoder_scheduler.step(val_metrics['encoder_loss'] + val_metrics['decoder_loss'])
             self.critic_scheduler.step(train_metrics['critic_loss'])
+            
+            # Check for early stopping criteria
+            if val_metrics['bit_accuracy'] >= self.target_accuracy and val_metrics['psnr'] >= self.min_psnr:
+                print(f"\nEarly stopping: Target bit accuracy of {self.target_accuracy:.2f} reached!")
+                early_stop = True
+                break
+            patience = 5
+            # Check for no improvement early stopping
+            if no_improve_count >= patience:
+                print(f"\nEarly stopping: No improvement for {patience} epochs")
+                early_stop = True
+                break
         
         # Save final models
         torch.save(self.encoder.state_dict(), os.path.join(self.output_dir, 'encoder_final.pt'))
         torch.save(self.decoder.state_dict(), os.path.join(self.output_dir, 'decoder_final.pt'))
         torch.save(self.critic.state_dict(), os.path.join(self.output_dir, 'critic_final.pt'))
         
-        print("Training completed. Models saved.")
+        if early_stop:
+            print(f"Training stopped early at epoch {epoch+1}.")
+        else:
+            print("Training completed through all epochs.")
+            
+        print(f"Best model from epoch {best_epoch+1} with bit accuracy {best_bit_accuracy:.4f}")
+        print(f"Models saved to {self.output_dir}")
+        
         return self.history
     
     def _train_epoch(self, train_loader, critic_iterations=5):
